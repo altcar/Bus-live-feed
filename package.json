@@ -1,0 +1,19 @@
+{
+  "name": "harry-stoke-board",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Live southbound bus departures for Harry Stoke (m1, m4, T1)",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.js",
+    "dev": "node --watch --env-file-if-exists=.env server.js",
+    "test": "node --env-file-if-exists=.env --test"
+  },
+  "dependencies": {
+    "cheerio": "^1.1.2",
+    "express": "^5.1.0"
+  }
+}

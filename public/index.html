@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en-GB">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#080c11" />
+    <meta
+      name="description"
+      content="Live southbound bus departures from Harry Stoke: m1, m4 and T1."
+    />
+    <title>Harry Stoke · Live departures</title>
+    <link rel="stylesheet" href="/styles.css?v=20261022c" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="top">
+        <div class="stop">
+          <p class="kicker"><span class="kicker__dot" aria-hidden="true"></span>Live departures</p>
+          <h1 id="stop-name">Harry Stoke</h1>
+          <p class="stop-meta" id="stop-meta">S-bound · towards City Centre &amp; Hengrove Park</p>
+        </div>
+        <div class="clock" aria-hidden="true">
+          <span class="clock__time" id="clock-time">--:--</span>
+          <span class="clock__date" id="clock-date">—</span>
+        </div>
+      </header>
+
+      <div class="controlbar">
+        <nav id="stop-switch" class="switcher" aria-label="Choose stop" hidden></nav>
+        <div class="providers" role="group" aria-label="Data source">
+          <button id="mode-live" class="provider provider--live" type="button" aria-pressed="true">
+            <span class="provider__dot" aria-hidden="true"></span>
+            <span>Live BODS</span>
+          </button>
+          <button
+            id="mode-tapi"
+            class="provider"
+            type="button"
+            aria-pressed="false"
+            title="Fetch a TAPI snapshot. Uses one TAPI request; page reloads reuse the cache."
+          >
+            <span>TAPI snapshot</span>
+            <span id="tapi-left" class="provider__hits">—</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="banner" class="banner" role="status" hidden></div>
+
+      <section class="board" aria-label="Upcoming southbound departures">
+        <div class="board__head" aria-hidden="true">
+          <span>Route</span>
+          <span>Destination</span>
+          <span class="right">Due</span>
+          <span class="right">Timetable</span>
+        </div>
+
+        <ol id="list" class="list">
+          <li class="placeholder">Loading departures…</li>
+        </ol>
+
+        <div id="empty" class="empty" hidden>
+          <p class="empty__title">No buses due</p>
+          <p class="empty__text">Nothing in the next few hours. Try refreshing a little later.</p>
+        </div>
+
+        <div id="error" class="empty empty--error" hidden>
+          <p class="empty__title">Can’t load live departures</p>
+          <p class="empty__text">The data source isn’t responding. Try again, or press TAPI for a cached snapshot.</p>
+          <button id="retry" class="btn" type="button">Try again</button>
+        </div>
+      </section>
+
+      <footer class="foot">
+        <div class="foot__meta">
+          <span id="provider">Connecting…</span>
+          <span class="sep" aria-hidden="true">·</span>
+          <span id="updated">not updated yet</span>
+        </div>
+      </footer>
+
+      <p class="note" id="note">
+        Live BODS data via bustimes.org. TAPI is only called when you press the TAPI button.
+      </p>
+      <noscript>
+        <p class="note">This board needs JavaScript to load departure times.</p>
+      </noscript>
+    </main>
+
+    <script src="/app.js?v=20261022c" type="module"></script>
+  </body>
+</html>

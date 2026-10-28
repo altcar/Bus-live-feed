@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# Local previews, caches and temp files
+_preview-*.png
+*.tmp
+.cache/
+
+# OS files
+.DS_Store
+Thumbs.db
