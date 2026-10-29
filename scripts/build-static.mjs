@@ -4,12 +4,20 @@ import { fileURLToPath } from 'node:url';
 
 import { config, routesForStop, STOP_META } from '../src/config.js';
 import { fetchBustimesBoard } from '../src/bustimes.js';
+import { fetchTapiBoard } from '../src/tapi.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
 
+// GitHub-hosted runners are blocked by bustimes, so CI uses TAPI when its
+// credentials are present. Local builds without credentials fall back to BODS.
+const useTapi = config.tapi.enabled;
+const fetchBoard = useTapi ? fetchTapiBoard : fetchBustimesBoard;
+
 fs.rmSync(dist, { recursive: true, force: true });
 fs.mkdirSync(dist, { recursive: true });
+
+console.log(`[build] Source: ${useTapi ? 'TAPI SIRI-VM' : 'bustimes/BODS'}`);
 
 const stops = await Promise.all(
   config.stops.map(async (atco) => {
@@ -17,7 +25,7 @@ const stops = await Promise.all(
     const routes = routesForStop(atco);
 
     try {
-      const board = await fetchBustimesBoard(atco, { routes });
+      const board = await fetchBoard(atco, { routes });
       console.log(`[build] ${atco} ${meta.label || ''}: ${board.departures.length} departures`);
       return {
         atco,
@@ -53,8 +61,10 @@ const data = {
   generatedAt: new Date().toISOString(),
   defaultStop: config.stops[0],
   refreshSeconds: 300,
-  actionIntervalMinutes: 15,
-  provider: 'GitHub Pages · static BODS snapshot',
+  actionIntervalMinutes: useTapi ? 180 : 15,
+  provider: useTapi
+    ? 'GitHub Pages · TAPI SIRI-VM snapshot'
+    : 'GitHub Pages · static BODS snapshot',
   stops,
 };
 

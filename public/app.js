@@ -541,8 +541,10 @@ function renderStaticStop(atco) {
     );
   }
 
-  $('note').textContent =
-    'Served by GitHub Pages — no Node server and no TAPI key online. Live data comes from BODS via bustimes.org.';
+  const source = String(state.staticData.provider || '').includes('TAPI')
+    ? 'TAPI SIRI-VM'
+    : 'BODS via bustimes.org';
+  $('note').textContent = `Served by GitHub Pages — no Node server or API key in the browser. Source: ${source} snapshot.`;
 }
 
 async function loadStatic() {
@@ -604,6 +606,11 @@ async function loadStatic() {
 async function bootStatic() {
   const providers = document.querySelector('.providers');
   if (providers) providers.hidden = true;
+
+  const errorText = $('error').querySelector('.empty__text');
+  if (errorText) {
+    errorText.textContent = 'The static snapshot could not be loaded. Try again.';
+  }
 
   $('retry').addEventListener('click', () => {
     hideError();

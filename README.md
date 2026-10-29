@@ -82,27 +82,39 @@ npm run dev
 ## View online (GitHub Pages)
 
 A GitHub Action builds a **static snapshot** of all three boards and publishes it
-to GitHub Pages — no Node server or TAPI key is needed online.
+to GitHub Pages — no Node server, and no API key in the browser.
 
 **<https://altcar.github.io/Bus-live-feed/>**
 
+Why TAPI here: GitHub-hosted runners get HTTP 403 from bustimes, so the online
+build uses TAPI. It runs every 3 hours and fetches each stop once:
+8 builds/day × 3 stops = **24 TAPI calls/day**, inside the 30/day plan. Each
+code push or manual run also costs 3 calls, so keep those occasional.
+
+Setup:
+
+1. Enable Pages: **Settings → Pages → Source: GitHub Actions**.
+2. Add the repository secrets:
+
+   ```powershell
+   gh secret set TAPI_APP_ID --repo altcar/Bus-live-feed
+   gh secret set TAPI_APP_KEY --repo altcar/Bus-live-feed
+   ```
+
+3. Run `.github/workflows/pages.yml` by schedule, push, or manual dispatch.
+
 How it works:
 
-- `.github/workflows/pages.yml` runs on every push, on demand, and every
-  15 minutes.
-- `scripts/build-static.mjs` fetches the three stops from bustimes/BODS and writes
-  `dist/index.html`, `dist/styles.css`, `dist/app.js` and `dist/data.json`.
+- `scripts/build-static.mjs` uses TAPI when its credentials are present;
+  otherwise it falls back to bustimes/BODS. It writes `dist/index.html`,
+  `dist/styles.css`, `dist/app.js` and `dist/data.json`.
 - `actions/deploy-pages` publishes `dist/`; the page polls `data.json` every
   5 minutes and counts the minutes down locally.
-- The banner shows the snapshot's build time. GitHub scheduled runs can be
-  delayed, so it is a near-live snapshot rather than a live stream.
-- The online version intentionally has **no TAPI button** — a static page cannot
-  keep the API key secret. TAPI remains local-only.
-- The workflow also uploads a downloadable `static-board` artifact to each run.
-
-Pages must be set to **Source: GitHub Actions** (Settings → Pages). The workflow
-tries to enable it automatically; if the deploy job fails, set it there and
-re-run the workflow.
+- The banner shows the exact snapshot time. This is a **3-hour snapshot**, not a
+  live stream: TAPI's 30/day limit cannot support minute-by-minute Pages builds.
+  The local server remains the live BODS board.
+- The online version has **no TAPI button** — a static page cannot keep the key
+  secret. The workflow also uploads a downloadable `static-board` artifact.
 
 Local preview:
 

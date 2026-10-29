@@ -4,8 +4,8 @@ on:
   push:
     branches: [main]
   schedule:
-    # Refresh the snapshot every 15 minutes. GitHub may delay scheduled runs.
-    - cron: '*/15 * * * *'
+    # 8 builds/day × 3 stops = 24 TAPI calls/day, leaving margin under 30/day.
+    - cron: '0 */3 * * *'
   workflow_dispatch:
 
 permissions:
@@ -35,6 +35,10 @@ jobs:
 
       - name: Build static snapshot
         run: npm run build:static
+        env:
+          TAPI_APP_ID: ${{ secrets.TAPI_APP_ID }}
+          TAPI_APP_KEY: ${{ secrets.TAPI_APP_KEY }}
+          HORIZON_HOURS: '4'
 
       - name: Upload downloadable snapshot
         uses: actions/upload-artifact@v4
