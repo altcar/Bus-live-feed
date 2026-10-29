@@ -81,40 +81,32 @@ npm run dev
 
 ## View online (GitHub Pages)
 
-A GitHub Action builds a **static snapshot** of all three boards and publishes it
-to GitHub Pages — no Node server, and no API key in the browser.
+A GitHub Action builds a static snapshot of all three boards and publishes it to
+GitHub Pages — no Node server, and no API key in the browser.
 
 **<https://altcar.github.io/Bus-live-feed/>**
 
-Why TAPI here: GitHub-hosted runners get HTTP 403 from bustimes, so the online
-build uses TAPI. It runs every 3 hours and fetches each stop once:
-8 builds/day × 3 stops = **24 TAPI calls/day**, inside the 30/day plan. Each
-code push or manual run also costs 3 calls, so keep those occasional.
-
-Setup:
-
-1. Enable Pages: **Settings → Pages → Source: GitHub Actions**.
-2. Add the repository secrets:
-
-   ```powershell
-   gh secret set TAPI_APP_ID --repo altcar/Bus-live-feed
-   gh secret set TAPI_APP_KEY --repo altcar/Bus-live-feed
-   ```
-
-3. Run `.github/workflows/pages.yml` by schedule, push, or manual dispatch.
+The online build uses **bustimes.org / BODS** through the lightweight
+`/stops/{ATCO}/departures` fragment. It runs every 15 minutes and makes **zero
+TAPI calls**. (GitHub's runners get HTTP 403 on bustimes' full stop page, but
+this fragment is reachable.)
 
 How it works:
 
-- `scripts/build-static.mjs` uses TAPI when its credentials are present;
-  otherwise it falls back to bustimes/BODS. It writes `dist/index.html`,
-  `dist/styles.css`, `dist/app.js` and `dist/data.json`.
+- `.github/workflows/pages.yml` runs on push, on demand, and every 15 minutes.
+- `scripts/build-static.mjs` with `STATIC_SOURCE=bustimes` writes
+  `dist/index.html`, `dist/styles.css`, `dist/app.js` and `dist/data.json`.
 - `actions/deploy-pages` publishes `dist/`; the page polls `data.json` every
   5 minutes and counts the minutes down locally.
-- The banner shows the exact snapshot time. This is a **3-hour snapshot**, not a
-  live stream: TAPI's 30/day limit cannot support minute-by-minute Pages builds.
-  The local server remains the live BODS board.
-- The online version has **no TAPI button** — a static page cannot keep the key
-  secret. The workflow also uploads a downloadable `static-board` artifact.
+- The banner shows the snapshot time. It is a **15-minute snapshot**, not a live
+  stream; the local server remains the live BODS board.
+- The online page has **no TAPI button** — a static page cannot keep the key
+  secret. TAPI stays local, where the button only spends a hit when clicked.
+- The workflow also uploads a downloadable `static-board` artifact.
+
+Optional: to build a Pages snapshot from TAPI instead, set `STATIC_SOURCE=tapi`
+and provide `TAPI_APP_ID`/`TAPI_APP_KEY` as Actions secrets. The scheduled
+bustimes build does not use them.
 
 Local preview:
 
