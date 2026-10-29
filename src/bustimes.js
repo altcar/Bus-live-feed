@@ -29,22 +29,31 @@ export async function fetchBustimesBoard(
   atco,
   { fetchImpl = fetch, now = Date.now(), routes = config.routes } = {}
 ) {
+  const base = `https://bustimes.org/stops/${encodeURIComponent(atco)}`;
+  const headers = {
+    Accept: 'text/html',
+    'User-Agent': 'harry-stoke-board/1.0 (personal local departure display)',
+  };
+
   let res;
+  let html;
   try {
-    res = await fetchImpl(`https://bustimes.org/stops/${encodeURIComponent(atco)}`, {
-      headers: {
-        Accept: 'text/html',
-        'User-Agent': 'harry-stoke-board/1.0 (personal local departure display)',
-      },
+    // The departures fragment is the same server-rendered table used by the
+    // page's refresh script. Fall back to the full page if it is unavailable.
+    res = await fetchImpl(`${base}/departures`, {
+      headers,
       signal: AbortSignal.timeout(15_000),
     });
+    if (!res.ok) {
+      res = await fetchImpl(base, { headers, signal: AbortSignal.timeout(15_000) });
+    }
+    if (!res.ok) throw new Error(`bustimes HTTP ${res.status}`);
+    html = await res.text();
   } catch (err) {
+    if (String(err.message).startsWith('bustimes HTTP')) throw err;
     throw new Error(`bustimes request failed: ${err.name || 'network error'}`);
   }
 
-  if (!res.ok) throw new Error(`bustimes HTTP ${res.status}`);
-
-  const html = await res.text();
   const $ = cheerio.load(html);
 
   const heading = $('h1').first().text().replace(/\s+/g, ' ').trim();
@@ -114,7 +123,7 @@ export async function fetchBustimesBoard(
     });
   });
 
-  if (!departures.length && heading === '') {
+  if (!departures.length && !$('table').length && !$('[id="departures"]').length && heading === '') {
     throw new Error('bustimes page could not be parsed');
   }
 

@@ -9,9 +9,13 @@ import { fetchTapiBoard } from '../src/tapi.js';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
 
-// GitHub-hosted runners are blocked by bustimes, so CI uses TAPI when its
-// credentials are present. Local builds without credentials fall back to BODS.
-const useTapi = config.tapi.enabled;
+// GitHub-hosted runners are blocked by bustimes, so CI can request TAPI
+// instead. The default is the free bustimes/BODS source.
+const requestedSource = String(process.env.STATIC_SOURCE || 'bustimes').toLowerCase();
+const useTapi = requestedSource === 'tapi';
+if (useTapi && !config.tapi.enabled) {
+  throw new Error('STATIC_SOURCE=tapi requires TAPI_APP_ID and TAPI_APP_KEY');
+}
 const fetchBoard = useTapi ? fetchTapiBoard : fetchBustimesBoard;
 
 fs.rmSync(dist, { recursive: true, force: true });
@@ -61,8 +65,7 @@ const data = {
   generatedAt: new Date().toISOString(),
   defaultStop: config.stops[0],
   refreshSeconds: 300,
-  actionIntervalMinutes: useTapi ? 180 : 15,
-  provider: useTapi
+  actionIntervalMinutes: useTapi ? 180 : 15,  provider: useTapi
     ? 'GitHub Pages · TAPI SIRI-VM snapshot'
     : 'GitHub Pages · static BODS snapshot',
   stops,
