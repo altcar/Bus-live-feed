@@ -15,8 +15,13 @@ const dateFmt = new Intl.DateTimeFormat('en-GB', {
 
 const $ = (id) => document.getElementById(id);
 const STATIC_MODE = document.documentElement.dataset.mode === 'static';
+const API_BASE =
+  document.querySelector('meta[name="api-base"]')?.content?.trim().replace(/\/+$/, '') || '';
 
 const state = {
+  apiBase: API_BASE,
+  workerMode: STATIC_MODE && Boolean(API_BASE),
+  snapshotMode: STATIC_MODE && !API_BASE,
   config: null,
   stop: null,
   provider: 'bustimes',
@@ -48,6 +53,10 @@ function formatAge(seconds) {
   const hours = Math.floor(seconds / 3600);
   const mins = Math.round((seconds % 3600) / 60);
   return mins ? `${hours}h ${mins}m` : `${hours}h`;
+}
+
+function apiUrl(path) {
+  return state.apiBase ? `${state.apiBase}${path}` : path;
 }
 
 async function apiGet(url, timeoutMs = 15000) {
@@ -243,7 +252,7 @@ function renderBanner(data) {
 }
 
 function updateTapi(data) {
-  if (STATIC_MODE) return;
+  if (state.snapshotMode) return;
 
   if (Number.isFinite(data?.tapi?.remaining)) {
     state.tapiRemaining = data.tapi.remaining;
@@ -272,16 +281,22 @@ function render(data) {
       : `updated ${timeOf(data.fetchedAt)}`;
 
   const interval = data.refreshSeconds || state.config?.refreshSeconds || 60;
-  $('note').textContent =
-    mode === 'tapi'
-      ? 'TAPI snapshot. Page reloads reuse the cache and do not use a hit. Auto-refresh is paused.'
-      : `Live BODS data via bustimes.org. Auto-refresh every ${interval}s. TAPI is only called when you press the TAPI button.`;
+  if (state.workerMode) {
+    $('note').textContent =
+      `Live BODS via Cloudflare Worker. Auto-refresh every ${interval}s. ` +
+      'TAPI remains local-only; no key is exposed in the browser.';
+  } else {
+    $('note').textContent =
+      mode === 'tapi'
+        ? 'TAPI snapshot. Page reloads reuse the cache and do not use a hit. Auto-refresh is paused.'
+        : `Live BODS data via bustimes.org. Auto-refresh every ${interval}s. TAPI is only called when you press the TAPI button.`;
+  }
 }
 
 /* ---------- controls ---------- */
 
 function renderProviderButtons() {
-  if (STATIC_MODE) return;
+  if (state.snapshotMode) return;
 
   const live = state.provider === 'bustimes';
   const tapiEnabled = Boolean(state.config?.tapi?.enabled);
@@ -353,7 +368,7 @@ function selectStop(atco) {
   hideBanner();
   hideError();
 
-  if (STATIC_MODE) {
+  if (state.snapshotMode) {
     renderStaticStop(atco);
     return;
   }
@@ -369,7 +384,7 @@ function selectStop(atco) {
 function schedule() {
   clearTimeout(state.timer);
 
-  if (STATIC_MODE) {
+  if (state.snapshotMode) {
     if (!state.staticData) return;
     const delay = Math.max(60, state.staticData.refreshSeconds || 300) * 1000;
     state.timer = setTimeout(() => {
@@ -426,7 +441,7 @@ function handleTapiFailure(err) {
 }
 
 async function load({ force = false, provider = state.provider } = {}) {
-  if (STATIC_MODE) {
+  if (state.snapshotMode) {
     await loadStatic();
     return;
   }
@@ -440,7 +455,7 @@ async function load({ force = false, provider = state.provider } = {}) {
     const params = new URLSearchParams({ stop: state.stop, provider });
     if (force) params.set('refresh', '1');
 
-    const data = await apiGet(`/api/departures?${params}`);
+    const data = await apiGet(apiUrl(`/api/departures?${params}`));
     state.data = data;
     state.provider = data.providerMode || provider;
     state.failures = 0;
@@ -633,13 +648,13 @@ async function bootStatic() {
 /* ---------- boot ---------- */
 
 async function boot() {
-  if (STATIC_MODE) {
+  if (state.snapshotMode) {
     await bootStatic();
     return;
   }
 
   try {
-    state.config = await apiGet('/api/config');
+    state.config = await apiGet(apiUrl('/api/config'));
   } catch {
     state.config = {
       stops: [],

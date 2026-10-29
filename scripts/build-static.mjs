@@ -85,6 +85,18 @@ if (!html.includes('data-mode="static"') || html.includes('/app.js?v=')) {
   throw new Error('Static HTML rewrite failed');
 }
 
+const workerUrl = String(process.env.WORKER_URL || '').trim().replace(/\/+$/, '');
+if (workerUrl) {
+  if (!/^https:\/\/[^\s"]+$/.test(workerUrl)) {
+    throw new Error('WORKER_URL must be an https:// URL');
+  }
+  html = html.replace(
+    '</head>',
+    `  <meta name="api-base" content="${workerUrl}" />\n  </head>`
+  );
+}
+console.log(`[build] Worker API: ${workerUrl || 'none (snapshot mode)'}`);
+
 fs.writeFileSync(path.join(dist, 'index.html'), html);
 fs.writeFileSync(path.join(dist, '.nojekyll'), '');
 

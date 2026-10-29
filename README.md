@@ -108,6 +108,23 @@ Optional: to build a Pages snapshot from TAPI instead, set `STATIC_SOURCE=tapi`
 and provide `TAPI_APP_ID`/`TAPI_APP_KEY` as Actions secrets. The scheduled
 bustimes build does not use them.
 
+### Live browser mode (Cloudflare Worker)
+
+`worker/` is a small CORS-enabled Cloudflare Worker that returns the same `/api`
+shape from free bustimes/BODS. When the repository variable `WORKER_URL` is set,
+the Pages page fetches the Worker every 60 seconds — no scheduled rebuilds and no
+API key in the browser. With no `WORKER_URL`, the 15-minute snapshot remains.
+
+```powershell
+cd worker
+npx wrangler login
+npx wrangler deploy
+gh variable set WORKER_URL --repo altcar/Bus-live-feed --body "https://bus-live-feed.<subdomain>.workers.dev"
+```
+
+Then re-run **Publish static board**. TAPI is not enabled in the Worker; the
+local board keeps the manual TAPI button.
+
 Local preview:
 
 ```powershell
