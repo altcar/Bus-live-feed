@@ -187,7 +187,9 @@ function parseBustimes(html, atco, now = Date.now()) {
     stop: {
       atco,
       name: meta.label,
+      label: meta.label,
       indicator: meta.indicator,
+      hint: meta.hint,
       locality: meta.label,
       bearing: '',
       smscode: '',
