@@ -81,39 +81,25 @@ npm run dev
 
 ## View online (GitHub Pages)
 
-A GitHub Action builds a static snapshot of all three boards and publishes it to
-GitHub Pages — no Node server, and no API key in the browser.
-
 **<https://altcar.github.io/Bus-live-feed/>**
 
-The online build uses **bustimes.org / BODS** through the lightweight
-`/stops/{ATCO}/departures` fragment. It runs every 15 minutes and makes **zero
-TAPI calls**. (GitHub's runners get HTTP 403 on bustimes' full stop page, but
-this fragment is reachable.)
+The page fetches live data in the browser from a **Cloudflare Worker**:
 
-How it works:
+- Worker: `https://bus-live-feed.hheylau.workers.dev`
+- Source: free bustimes.org / BODS (the Worker fetches the
+  `/stops/{ATCO}/departures` fragment)
+- Browser refresh: every **60 seconds**
+- TAPI: local-only; the Worker exposes no key and has no TAPI endpoint
+- No scheduled Pages rebuilds. The static `data.json` snapshot is only used when
+  `WORKER_URL` is unset.
 
-- `.github/workflows/pages.yml` runs on push, on demand, and every 15 minutes.
-- `scripts/build-static.mjs` with `STATIC_SOURCE=bustimes` writes
-  `dist/index.html`, `dist/styles.css`, `dist/app.js` and `dist/data.json`.
-- `actions/deploy-pages` publishes `dist/`; the page polls `data.json` every
-  5 minutes and counts the minutes down locally.
-- The banner shows the snapshot time. It is a **15-minute snapshot**, not a live
-  stream; the local server remains the live BODS board.
-- The online page has **no TAPI button** — a static page cannot keep the key
-  secret. TAPI stays local, where the button only spends a hit when clicked.
-- The workflow also uploads a downloadable `static-board` artifact.
+`worker/src/index.js` is a CORS-enabled API that mirrors the local server's
+`/api` shape. `scripts/build-static.mjs` injects
+`<meta name="api-base" content="https://bus-live-feed.hheylau.workers.dev">` from
+the repository variable `WORKER_URL`. The Pages workflow runs on code pushes or
+manually, not on a timer.
 
-Optional: to build a Pages snapshot from TAPI instead, set `STATIC_SOURCE=tapi`
-and provide `TAPI_APP_ID`/`TAPI_APP_KEY` as Actions secrets. The scheduled
-bustimes build does not use them.
-
-### Live browser mode (Cloudflare Worker)
-
-`worker/` is a small CORS-enabled Cloudflare Worker that returns the same `/api`
-shape from free bustimes/BODS. When the repository variable `WORKER_URL` is set,
-the Pages page fetches the Worker every 60 seconds — no scheduled rebuilds and no
-API key in the browser. With no `WORKER_URL`, the 15-minute snapshot remains.
+Deploying the Worker:
 
 ```powershell
 cd worker
@@ -122,8 +108,9 @@ npx wrangler deploy
 gh variable set WORKER_URL --repo altcar/Bus-live-feed --body "https://bus-live-feed.<subdomain>.workers.dev"
 ```
 
-Then re-run **Publish static board**. TAPI is not enabled in the Worker; the
-local board keeps the manual TAPI button.
+Then re-run **Publish static board**. The local board keeps the manual TAPI
+button; the online Worker is BODS-only. If the Worker is unreachable, the page
+shows its error state.
 
 Local preview:
 

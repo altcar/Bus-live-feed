@@ -3,9 +3,6 @@ name: Publish static board
 on:
   push:
     branches: [main]
-  schedule:
-    # BODS via bustimes is free; refresh the static board every 15 minutes.
-    - cron: '*/15 * * * *'
   workflow_dispatch:
 
 permissions:
