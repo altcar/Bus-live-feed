@@ -224,6 +224,375 @@ async function fetchBustimes(atco) {
   return res.text();
 }
 
+function cleanDestination(value) {
+  return String(value || '')
+    .replace(/,\s*The Centre\s*$/i, '')
+    .trim();
+}
+
+function isTrue(value) {
+  return value === true || value === 'true' || value === 1;
+}
+
+function tapiSettings(env) {
+  return {
+    enabled: Boolean(env.TAPI_APP_ID && env.TAPI_APP_KEY && env.BOARD_KV),
+    dailyLimit: Math.max(1, Number(env.TAPI_DAILY_LIMIT) || 28),
+    cacheSeconds: Math.max(60, Number(env.TAPI_CACHE_SECONDS) || 21_600),
+    minIntervalSeconds: Math.max(0, Number(env.TAPI_MIN_INTERVAL_SECONDS) || 10),
+  };
+}
+
+async function getTapiCache(env, atco) {
+  if (!env.BOARD_KV) return null;
+  try {
+    const raw = await env.BOARD_KV.get(`tapi:${atco}`, { type: 'json' });
+    if (!raw?.data || !raw.fetchedAt) return null;
+    const fetchedMs = Date.parse(raw.fetchedAt);
+    const ageSeconds = Number.isFinite(fetchedMs)
+      ? Math.max(0, Math.floor((Date.now() - fetchedMs) / 1000))
+      : null;
+    return { data: raw.data, fetchedAt: raw.fetchedAt, ageSeconds };
+  } catch {
+    return null;
+  }
+}
+
+async function setTapiCache(env, atco, data) {
+  await env.BOARD_KV.put(
+    `tapi:${atco}`,
+    JSON.stringify({ data, fetchedAt: data.fetchedAt }),
+    { expirationTtl: 7 * 24 * 60 * 60 }
+  );
+}
+
+async function getTapiRemaining(env) {
+  const settings = tapiSettings(env);
+  if (!settings.enabled) return null;
+  try {
+    const date = londonDate();
+    const raw = await env.BOARD_KV.get(`usage:${date}`);
+    const count = Number(raw) || 0;
+    return Math.max(0, settings.dailyLimit - count);
+  } catch {
+    return null;
+  }
+}
+
+async function consumeTapiHit(env) {
+  const settings = tapiSettings(env);
+  const date = londonDate();
+  const key = `usage:${date}`;
+  const current = Number(await env.BOARD_KV.get(key)) || 0;
+  if (current >= settings.dailyLimit) {
+    return { ok: false, count: current, remaining: 0 };
+  }
+  const count = current + 1;
+  await env.BOARD_KV.put(key, String(count), { expirationTtl: 2 * 24 * 60 * 60 });
+  return { ok: true, count, remaining: settings.dailyLimit - count };
+}
+
+function normalizeTapiBoard(json, atco, now = Date.now()) {
+  const meta = STOPS[atco];
+  const raw = Object.values(json.departures || {}).flat();
+  const seen = new Set();
+  const departures = [];
+
+  for (const d of raw) {
+    if (!d || typeof d !== 'object') continue;
+
+    const line = String(d.line || d.line_name || '').trim();
+    if (!line) continue;
+    if (!meta.routes.some((r) => r.toLowerCase() === line.toLowerCase())) continue;
+
+    const aimedDate = d.aimed?.departure?.date || d.date;
+    const aimedTime = d.aimed_departure_time || d.aimed?.departure?.time;
+    if (!aimedDate || !aimedTime) continue;
+
+    const expectedTime = d.expected_departure_time || d.expected?.departure?.time || null;
+    const expectedDate =
+      d.expected_departure_date || d.expected?.departure?.date || aimedDate;
+
+    const bestDate = expectedTime ? expectedDate : aimedDate;
+    const bestTime = expectedTime || aimedTime;
+
+    let aimedEpoch;
+    let bestEpoch;
+    try {
+      aimedEpoch = zonedTimeToEpoch(aimedDate, aimedTime);
+      bestEpoch = zonedTimeToEpoch(bestDate, bestTime);
+    } catch {
+      continue;
+    }
+
+    if (bestEpoch < now - 90_000) continue;
+
+    const key = `${line.toLowerCase()}|${bestEpoch}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const cancelled = isTrue(d.status?.cancellation?.value);
+    const source = String(d.source || '');
+    const live =
+      Boolean(expectedTime) && /sirivm|siri\s*vm|nextbuses|realtime/i.test(source);
+
+    departures.push({
+      line: meta.routes.find((r) => r.toLowerCase() === line.toLowerCase()) || line,
+      destination: cleanDestination(d.direction) || 'Unknown destination',
+      aimedDate,
+      aimedTime,
+      expectedDate,
+      expectedTime,
+      aimedEpoch,
+      bestEpoch,
+      minutes: Math.max(0, Math.floor((bestEpoch - now) / 60_000)),
+      due: bestEpoch - now <= 60_000,
+      live,
+      cancelled,
+      source,
+      operator: d.operator || '',
+      operatorName: d.operator_name || '',
+      occupancy: Array.isArray(d.status?.occupancy?.types)
+        ? d.status.occupancy.types.join(', ')
+        : '',
+    });
+  }
+
+  departures.sort((a, b) => a.bestEpoch - b.bestEpoch);
+
+  return {
+    stop: {
+      atco,
+      name: meta.label,
+      label: meta.label,
+      indicator: meta.indicator,
+      hint: meta.hint,
+      locality: meta.label,
+      bearing: '',
+      smscode: '',
+      lat: meta.lat,
+      lon: meta.lon,
+    },
+    departures: departures.slice(0, 40),
+    fetchedAt: new Date(now).toISOString(),
+    requestTime: json.request_time || null,
+  };
+}
+
+async function fetchTapiBoard(env, atco) {
+  const url = new URL(
+    `https://transportapi.com/v3/uk/bus/stop_timetables/${encodeURIComponent(atco)}.json`
+  );
+  url.searchParams.set('app_id', env.TAPI_APP_ID);
+  url.searchParams.set('app_key', env.TAPI_APP_KEY);
+  url.searchParams.set('live', 'true');
+  url.searchParams.set('source_config', 'siri_vm');
+  url.searchParams.set('limit', '50');
+  url.searchParams.set('from_offset', '-PT00:01:00');
+  url.searchParams.set('to_offset', 'PT04:00:00');
+
+  const res = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (!res.ok) {
+    const err = new Error(`TAPI ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
+
+  return normalizeTapiBoard(await res.json(), atco);
+}
+
+function mapTapiError(err) {
+  const status = err?.status ?? null;
+  if (status === 401) {
+    return {
+      status: 401,
+      code: 'tapi_unauthorized',
+      message: 'TAPI rejected the API key (401).',
+    };
+  }
+  if (status === 403) {
+    return {
+      status: 403,
+      code: 'tapi_forbidden',
+      message: 'TAPI returned 403 — the daily quota may be used up.',
+    };
+  }
+  if (status === 429) {
+    return {
+      status: 429,
+      code: 'tapi_rate_limited',
+      message: 'TAPI rate limit reached (429).',
+    };
+  }
+  return {
+    status: 502,
+    code: 'tapi_unavailable',
+    message: 'TAPI is unavailable right now.',
+  };
+}
+
+async function tapiMeta(env, atco, extra = {}) {
+  const settings = tapiSettings(env);
+  const cached = await getTapiCache(env, atco);
+  return {
+    enabled: settings.enabled,
+    dailyLimit: settings.dailyLimit,
+    remaining: await getTapiRemaining(env),
+    cacheSeconds: settings.cacheSeconds,
+    cachedAt: cached?.fetchedAt || null,
+    ageSeconds: cached?.ageSeconds ?? null,
+    ...extra,
+  };
+}
+
+async function handleTapi(url, env, atco, cors) {
+  const settings = tapiSettings(env);
+  if (!settings.enabled) {
+    return json(
+      {
+        error: 'tapi_disabled',
+        message: 'TAPI is not configured on this Worker.',
+        providerMode: 'tapi',
+        tapi: await tapiMeta(env, atco, { error: 'tapi_disabled' }),
+      },
+      503,
+      cors
+    );
+  }
+
+  const force = url.searchParams.get('refresh') === '1';
+  const cached = await getTapiCache(env, atco);
+
+  if (!force) {
+    if (cached) {
+      return json(
+        {
+          ...cached.data,
+          provider: 'TAPI snapshot (cached)',
+          providerMode: 'tapi',
+          tapi: await tapiMeta(env, atco, { fromCache: true }),
+          refreshSeconds: 60,
+          serverTime: Date.now(),
+        },
+        200,
+        cors
+      );
+    }
+    return json(
+      {
+        error: 'tapi_cache_empty',
+        message: 'No TAPI snapshot is cached for this stop yet.',
+        providerMode: 'tapi',
+        tapi: await tapiMeta(env, atco, { error: 'tapi_cache_empty' }),
+      },
+      404,
+      cors
+    );
+  }
+
+  if (
+    cached &&
+    cached.ageSeconds !== null &&
+    cached.ageSeconds < settings.minIntervalSeconds
+  ) {
+    return json(
+      {
+        ...cached.data,
+        provider: 'TAPI snapshot (cached)',
+        providerMode: 'tapi',
+        tapi: await tapiMeta(env, atco, { fromCache: true, cooldown: true }),
+        refreshSeconds: 60,
+        serverTime: Date.now(),
+      },
+      200,
+      cors
+    );
+  }
+
+  const spend = await consumeTapiHit(env);
+  if (!spend.ok) {
+    const message = `Daily TAPI limit reached (${settings.dailyLimit}/${settings.dailyLimit}).`;
+    if (cached) {
+      return json(
+        {
+          ...cached.data,
+          provider: 'TAPI snapshot (cached)',
+          providerMode: 'tapi',
+          tapi: await tapiMeta(env, atco, {
+            fromCache: true,
+            error: 'tapi_daily_limit',
+            message,
+          }),
+          refreshSeconds: 60,
+          serverTime: Date.now(),
+        },
+        200,
+        cors
+      );
+    }
+    return json(
+      {
+        error: 'tapi_daily_limit',
+        message,
+        providerMode: 'tapi',
+        tapi: await tapiMeta(env, atco, { error: 'tapi_daily_limit', message }),
+      },
+      429,
+      cors
+    );
+  }
+
+  try {
+    const data = await fetchTapiBoard(env, atco);
+    await setTapiCache(env, atco, data);
+    return json(
+      {
+        ...data,
+        provider: 'TAPI snapshot',
+        providerMode: 'tapi',
+        tapi: await tapiMeta(env, atco),
+        refreshSeconds: 60,
+        serverTime: Date.now(),
+      },
+      200,
+      cors
+    );
+  } catch (err) {
+    const mapped = mapTapiError(err);
+    if (cached) {
+      return json(
+        {
+          ...cached.data,
+          provider: 'TAPI snapshot (cached)',
+          providerMode: 'tapi',
+          tapi: await tapiMeta(env, atco, {
+            fromCache: true,
+            error: mapped.code,
+            message: mapped.message,
+          }),
+          refreshSeconds: 60,
+          serverTime: Date.now(),
+        },
+        200,
+        cors
+      );
+    }
+    return json(
+      {
+        error: mapped.code,
+        message: mapped.message,
+        providerMode: 'tapi',
+        tapi: await tapiMeta(env, atco, {
+          error: mapped.code,
+          message: mapped.message,
+        }),
+      },
+      mapped.status,
+      cors
+    );
+  }
+}
+
 function corsHeaders(origin, env) {
   const allowed = String(env.ALLOWED_ORIGINS || DEFAULT_ORIGINS)
     .split(',')
@@ -249,18 +618,8 @@ function json(data, status, headers) {
   });
 }
 
-function disabledTapi() {
-  return {
-    enabled: false,
-    dailyLimit: 0,
-    remaining: null,
-    cacheSeconds: 0,
-    cachedAt: null,
-    ageSeconds: null,
-  };
-}
-
-function configPayload() {
+async function configPayload(env) {
+  const settings = tapiSettings(env);
   return {
     defaultStop: '017000054',
     stops: Object.entries(STOPS).map(([atco, meta]) => ({
@@ -273,7 +632,12 @@ function configPayload() {
     routes: ROUTES,
     refreshSeconds: 60,
     primaryProvider: 'bustimes',
-    tapi: disabledTapi(),
+    tapi: {
+      enabled: settings.enabled,
+      dailyLimit: settings.dailyLimit,
+      remaining: await getTapiRemaining(env),
+      cacheSeconds: settings.cacheSeconds,
+    },
   };
 }
 
@@ -292,14 +656,19 @@ export default {
 
     if (url.pathname === '/api/health') {
       return json(
-        { ok: true, provider: 'bustimes', stops: Object.keys(STOPS) },
+        {
+          ok: true,
+          provider: 'bustimes',
+          stops: Object.keys(STOPS),
+          tapiRemaining: await getTapiRemaining(env),
+        },
         200,
         cors
       );
     }
 
     if (url.pathname === '/api/config') {
-      return json(configPayload(), 200, cors);
+      return json(await configPayload(env), 200, cors);
     }
 
     if (url.pathname === '/api/departures') {
@@ -310,14 +679,18 @@ export default {
 
       const provider = String(url.searchParams.get('provider') || 'bustimes').toLowerCase();
       if (provider === 'tapi') {
-        return json(
-          {
-            error: 'tapi_disabled',
-            message: 'TAPI is local-only. Online uses free BODS via the Worker.',
-          },
-          503,
-          cors
-        );
+        try {
+          return await handleTapi(url, env, atco, cors);
+        } catch {
+          return json(
+            {
+              error: 'tapi_unavailable',
+              message: 'TAPI endpoint failed.',
+            },
+            502,
+            cors
+          );
+        }
       }
       if (provider !== 'bustimes') {
         return json({ error: 'unknown_provider' }, 400, cors);
@@ -331,7 +704,7 @@ export default {
             ...board,
             provider: 'bustimes.org · BODS (Worker)',
             providerMode: 'bustimes',
-            tapi: disabledTapi(),
+            tapi: await tapiMeta(env, atco),
             refreshSeconds: 60,
             horizonHours: 3,
             serverTime: Date.now(),

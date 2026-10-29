@@ -89,7 +89,8 @@ The page fetches live data in the browser from a **Cloudflare Worker**:
 - Source: free bustimes.org / BODS (the Worker fetches the
   `/stops/{ATCO}/departures` fragment)
 - Browser refresh: every **60 seconds**
-- TAPI: local-only; the Worker exposes no key and has no TAPI endpoint
+- TAPI: also online, via the Worker's KV cache. Pressing the TAPI button spends
+  1 of 28 daily hits; page reloads reuse the cached snapshot and spend nothing.
 - No scheduled Pages rebuilds. The static `data.json` snapshot is only used when
   `WORKER_URL` is unset.
 
@@ -104,13 +105,17 @@ Deploying the Worker:
 ```powershell
 cd worker
 npx wrangler login
+npx wrangler kv namespace create BOARD_KV   # put the id in wrangler.toml
+npx wrangler secret put TAPI_APP_ID
+npx wrangler secret put TAPI_APP_KEY
 npx wrangler deploy
 gh variable set WORKER_URL --repo altcar/Bus-live-feed --body "https://bus-live-feed.<subdomain>.workers.dev"
 ```
 
-Then re-run **Publish static board**. The local board keeps the manual TAPI
-button; the online Worker is BODS-only. If the Worker is unreachable, the page
-shows its error state.
+Then re-run **Publish static board**. The Worker and the local board share the
+same TAPI key and therefore the same upstream 30/day cap; each has its own local
+guard, so don't max both. If the Worker is unreachable, the page shows its error
+state.
 
 Local preview:
 

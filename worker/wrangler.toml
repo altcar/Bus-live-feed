@@ -5,3 +5,10 @@ workers_dev = true
 
 [vars]
 ALLOWED_ORIGINS = "https://altcar.github.io,http://127.0.0.1:3002,http://localhost:3002"
+TAPI_DAILY_LIMIT = "28"
+TAPI_CACHE_SECONDS = "21600"
+TAPI_MIN_INTERVAL_SECONDS = "10"
+
+[[kv_namespaces]]
+binding = "BOARD_KV"
+id = "be0912652ca549948b1194b01c40a20b"
