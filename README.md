@@ -79,6 +79,38 @@ For development with auto-restart:
 npm run dev
 ```
 
+## View online (GitHub Pages)
+
+A GitHub Action builds a **static snapshot** of all three boards and publishes it
+to GitHub Pages — no Node server or TAPI key is needed online.
+
+**<https://altcar.github.io/Bus-live-feed/>**
+
+How it works:
+
+- `.github/workflows/pages.yml` runs on every push, on demand, and every
+  15 minutes.
+- `scripts/build-static.mjs` fetches the three stops from bustimes/BODS and writes
+  `dist/index.html`, `dist/styles.css`, `dist/app.js` and `dist/data.json`.
+- `actions/deploy-pages` publishes `dist/`; the page polls `data.json` every
+  5 minutes and counts the minutes down locally.
+- The banner shows the snapshot's build time. GitHub scheduled runs can be
+  delayed, so it is a near-live snapshot rather than a live stream.
+- The online version intentionally has **no TAPI button** — a static page cannot
+  keep the API key secret. TAPI remains local-only.
+- The workflow also uploads a downloadable `static-board` artifact to each run.
+
+Pages must be set to **Source: GitHub Actions** (Settings → Pages). The workflow
+tries to enable it automatically; if the deploy job fails, set it there and
+re-run the workflow.
+
+Local preview:
+
+```powershell
+npm run build:static
+npm run preview:static   # http://127.0.0.1:3002
+```
+
 ## Where to get API keys
 
 | Key | Sign up | Copy it |

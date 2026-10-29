@@ -9,7 +9,8 @@ node_modules/
 # Logs
 *.log
 
-# Local previews, caches and temp files
+# Local previews, build output, caches and temp files
+dist/
 _preview-*.png
 *.tmp
 .cache/

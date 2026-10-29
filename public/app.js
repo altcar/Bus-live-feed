@@ -14,6 +14,7 @@ const dateFmt = new Intl.DateTimeFormat('en-GB', {
 });
 
 const $ = (id) => document.getElementById(id);
+const STATIC_MODE = document.documentElement.dataset.mode === 'static';
 
 const state = {
   config: null,
@@ -242,6 +243,8 @@ function renderBanner(data) {
 }
 
 function updateTapi(data) {
+  if (STATIC_MODE) return;
+
   if (Number.isFinite(data?.tapi?.remaining)) {
     state.tapiRemaining = data.tapi.remaining;
   }
@@ -278,6 +281,8 @@ function render(data) {
 /* ---------- controls ---------- */
 
 function renderProviderButtons() {
+  if (STATIC_MODE) return;
+
   const live = state.provider === 'bustimes';
   const tapiEnabled = Boolean(state.config?.tapi?.enabled);
 
@@ -347,6 +352,12 @@ function selectStop(atco) {
   $('list').replaceChildren();
   hideBanner();
   hideError();
+
+  if (STATIC_MODE) {
+    renderStaticStop(atco);
+    return;
+  }
+
   load({
     provider: state.provider,
     force: state.provider === 'bustimes',
@@ -357,6 +368,20 @@ function selectStop(atco) {
 
 function schedule() {
   clearTimeout(state.timer);
+
+  if (STATIC_MODE) {
+    if (!state.staticData) return;
+    const delay = Math.max(60, state.staticData.refreshSeconds || 300) * 1000;
+    state.timer = setTimeout(() => {
+      if (document.hidden) {
+        schedule();
+        return;
+      }
+      loadStatic();
+    }, delay);
+    return;
+  }
+
   if (!state.stop || state.provider !== 'bustimes') return;
 
   const base = (state.config?.refreshSeconds || 60) * 1000;
@@ -401,6 +426,11 @@ function handleTapiFailure(err) {
 }
 
 async function load({ force = false, provider = state.provider } = {}) {
+  if (STATIC_MODE) {
+    await loadStatic();
+    return;
+  }
+
   if (state.loading || !state.stop) return;
 
   setLoading(true);
@@ -463,9 +493,144 @@ function tickCountdowns() {
   }
 }
 
+/* ---------- static GitHub Pages mode ---------- */
+
+let staticLoading = false;
+
+function renderStaticStop(atco) {
+  if (!state.staticData) return;
+
+  const stop = state.staticData.stops.find((s) => s.atco === atco);
+  if (!stop) {
+    showError();
+    return;
+  }
+
+  const now = Date.now();
+  const departures = (stop.departures || []).filter(
+    (dep) => Number.isFinite(dep.bestEpoch) && dep.bestEpoch > now - 120_000
+  );
+
+  render({
+    stop: {
+      atco: stop.atco,
+      name: stop.label,
+      label: stop.label,
+      indicator: stop.indicator,
+      hint: stop.hint,
+    },
+    departures,
+    fetchedAt: stop.fetchedAt || state.staticData.generatedAt,
+    provider: state.staticData.provider || 'GitHub Pages · static BODS snapshot',
+    providerMode: 'bustimes',
+    refreshSeconds: state.staticData.refreshSeconds || 300,
+  });
+
+  const generated = state.staticData.generatedAt;
+  const actionMinutes = state.staticData.actionIntervalMinutes || 15;
+
+  if (stop.error) {
+    showBanner(
+      `This stop could not be refreshed in the latest build. Showing ${timeOf(stop.fetchedAt || generated)}.`,
+      'warn'
+    );
+  } else {
+    showBanner(
+      `Static snapshot generated ${timeOf(generated)}. GitHub Actions rebuilds it every ${actionMinutes} minutes; the countdown runs locally.`,
+      'info'
+    );
+  }
+
+  $('note').textContent =
+    'Served by GitHub Pages — no Node server and no TAPI key online. Live data comes from BODS via bustimes.org.';
+}
+
+async function loadStatic() {
+  if (staticLoading) return;
+  staticLoading = true;
+
+  try {
+    const data = await apiGet(`./data.json?ts=${Date.now()}`);
+    if (!Array.isArray(data.stops) || !data.stops.length) {
+      throw new Error('Static data is empty');
+    }
+
+    state.staticData = data;
+    state.config = {
+      stops: data.stops.map((stop) => ({
+        atco: stop.atco,
+        label: stop.label,
+        indicator: stop.indicator,
+        hint: stop.hint,
+        routes: stop.routes,
+      })),
+      defaultStop: data.defaultStop || data.stops[0].atco,
+      refreshSeconds: data.refreshSeconds || 300,
+      primaryProvider: 'bustimes',
+      tapi: { enabled: false, dailyLimit: 0, cacheSeconds: 0, remaining: null },
+    };
+
+    let saved = null;
+    try {
+      saved = localStorage.getItem('hsb.stop');
+    } catch {
+      /* storage disabled */
+    }
+
+    if (!state.stop || !data.stops.some((stop) => stop.atco === state.stop)) {
+      state.stop = data.stops.some((stop) => stop.atco === saved)
+        ? saved
+        : state.config.defaultStop;
+    }
+
+    renderSwitcher();
+    state.lastFetch = Date.now();
+    state.failures = 0;
+    hideError();
+    renderStaticStop(state.stop);
+  } catch {
+    state.failures += 1;
+    if (state.staticData) {
+      showBanner('Could not check for a newer snapshot — showing the last one.', 'warn');
+    } else {
+      showError();
+    }
+  } finally {
+    staticLoading = false;
+    schedule();
+  }
+}
+
+async function bootStatic() {
+  const providers = document.querySelector('.providers');
+  if (providers) providers.hidden = true;
+
+  $('retry').addEventListener('click', () => {
+    hideError();
+    loadStatic();
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    const staleAfter = (state.staticData?.refreshSeconds || 300) * 1000;
+    if (Date.now() - state.lastFetch > staleAfter) loadStatic();
+  });
+
+  tickClock();
+  setInterval(tickClock, 1000);
+  setInterval(tickCountdowns, 1000);
+
+  await loadStatic();
+}
+
 /* ---------- boot ---------- */
 
 async function boot() {
+  if (STATIC_MODE) {
+    await bootStatic();
+    return;
+  }
+
   try {
     state.config = await apiGet('/api/config');
   } catch {

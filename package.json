@@ -10,7 +10,9 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env server.js",
     "dev": "node --watch --env-file-if-exists=.env server.js",
-    "test": "node --env-file-if-exists=.env --test"
+    "test": "node --env-file-if-exists=.env --test",
+    "build:static": "node --env-file-if-exists=.env scripts/build-static.mjs",
+    "preview:static": "node scripts/serve-static.mjs"
   },
   "dependencies": {
     "cheerio": "^1.1.2",
