@@ -111,12 +111,15 @@ npx wrangler secret put TAPI_APP_KEY
 
 Auto-deploy (Cloudflare dashboard Git connection):
 
-1. Workers & Pages → `m1-bus` → Settings → Builds → Connect → GitHub →
-   `altcar/Bus-live-feed`, branch `main`.
-2. Build command: `node scripts/build-worker-assets.mjs`
-3. Deploy command: `npx wrangler@4.160.0 deploy`
-4. Root directory: repository root (or `worker`, with build command
-   `node ../scripts/build-worker-assets.mjs`).
+The repository is already connected to `m1-bus` (Workers & Pages → `m1-bus` →
+Settings → Builds), branch `main`, and every push runs:
+
+- Build command: `node scripts/build-worker-assets.mjs`
+- Deploy command: `npx wrangler@4.160.0 deploy`
+- Root directory: repository root
+
+To reconnect or change it, use Settings → Builds → Connect → GitHub →
+`altcar/Bus-live-feed`. Keep the `name` in `wrangler.toml` set to `m1-bus`.
 
 The Worker name in `wrangler.toml` must stay `m1-bus`. The Worker and the local
 board share the same TAPI key and therefore the same upstream 30/day cap; each
