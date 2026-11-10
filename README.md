@@ -130,12 +130,8 @@ npm run build:worker
 npx wrangler dev --config worker/wrangler.toml   # http://127.0.0.1:8787
 ```
 
-The offline static snapshot is still available:
-
-```powershell
-npm run build:static
-npm run preview:static   # http://127.0.0.1:3002
-```
+The Pages redirect page is built by `npm run build:static` (it writes
+`dist/index.html`, which redirects to the Worker).
 
 ## Where to get API keys
 
