@@ -1,3 +1,5 @@
+import { loadSettings, saveSettings, DEFAULT_SETTINGS } from './settings-store.js';
+
 const clockFmt = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'Europe/London',
   hour: '2-digit',
@@ -23,6 +25,8 @@ const state = {
   workerMode: STATIC_MODE && Boolean(API_BASE),
   snapshotMode: STATIC_MODE && !API_BASE,
   config: null,
+  settings: { ...DEFAULT_SETTINGS },
+  stops: [],
   stop: null,
   provider: 'bustimes',
   data: null,
@@ -151,14 +155,25 @@ function buildRow(dep) {
 
   const sched = document.createElement('span');
   sched.className = 'sched';
-  sched.textContent = dep.aimedTime || '—';
-  if (dep.live && dep.expectedTime && dep.expectedTime !== dep.aimedTime) {
-    const extra = document.createElement('small');
-    extra.textContent = `exp ${dep.expectedTime}`;
-    sched.append(extra);
+  const schedMode = state.settings.schedMode;
+  if (schedMode === 'expected') {
+    sched.textContent = dep.expectedTime || dep.aimedTime || '—';
+  } else {
+    sched.textContent = dep.aimedTime || '—';
+    if (
+      schedMode === 'both' &&
+      dep.live &&
+      dep.expectedTime &&
+      dep.expectedTime !== dep.aimedTime
+    ) {
+      const extra = document.createElement('small');
+      extra.textContent = `exp ${dep.expectedTime}`;
+      sched.append(extra);
+    }
   }
 
-  li.append(route, dest, due, sched);
+  if (state.settings.swapColumns) li.append(route, dest, sched, due);
+  else li.append(route, dest, due, sched);
   return li;
 }
 
@@ -262,6 +277,12 @@ function updateTapi(data) {
 
 function render(data) {
   const stop = data.stop || {};
+  const knownStop = (state.stops || []).find((item) => item.atco === stop.atco);
+  if (knownStop) {
+    stop.label = knownStop.label || stop.label;
+    stop.indicator = knownStop.indicator || stop.indicator;
+    stop.hint = knownStop.hint || stop.hint;
+  }
   $('stop-name').textContent = stop.label || stop.name || 'Bus stop';
 
   const details = [stop.indicator, stop.hint].filter(Boolean).join(' · ');
@@ -320,11 +341,7 @@ function renderProviderButtons() {
 function setProvider(mode) {
   state.provider = mode;
   clearTimeout(state.timer);
-  try {
-    localStorage.setItem('hsb.provider', mode);
-  } catch {
-    /* storage disabled */
-  }
+  saveSettings({ provider: mode }).catch(() => {});
   renderProviderButtons();
 }
 
@@ -332,7 +349,7 @@ function renderSwitcher() {
   const nav = $('stop-switch');
   nav.replaceChildren();
 
-  const stops = state.config?.stops || [];
+  const stops = state.stops || [];
   if (stops.length < 2) {
     nav.hidden = true;
     return;
@@ -344,7 +361,9 @@ function renderSwitcher() {
     button.className = 'switch';
     button.dataset.atco = stop.atco;
     button.setAttribute('aria-pressed', String(stop.atco === state.stop));
-    button.textContent = `${stop.label} · ${stop.indicator || 'stop'}`;
+    button.textContent = stop.indicator
+      ? `${stop.label} · ${stop.indicator}`
+      : stop.label;
     button.title = stop.hint || '';
     button.addEventListener('click', () => selectStop(stop.atco));
     nav.append(button);
@@ -353,16 +372,27 @@ function renderSwitcher() {
   nav.hidden = false;
 }
 
+function applyBoardLayout() {
+  const board = document.querySelector('.board');
+  const head = document.querySelector('.board__head');
+  if (!board || !head) return;
+
+  const swap = Boolean(state.settings.swapColumns);
+  board.classList.toggle('board--swapped', swap);
+
+  const headings = head.querySelectorAll('span');
+  if (headings.length >= 4) {
+    headings[2].textContent = swap ? 'Timetable' : 'Due';
+    headings[3].textContent = swap ? 'Due' : 'Timetable';
+  }
+}
+
 function selectStop(atco) {
   if (!atco || atco === state.stop) return;
   state.stop = atco;
   state.data = null;
   state.failures = 0;
-  try {
-    localStorage.setItem('hsb.stop', atco);
-  } catch {
-    /* storage disabled */
-  }
+  saveSettings({ stop: atco }).catch(() => {});
   renderSwitcher();
   $('list').replaceChildren();
   hideBanner();
@@ -398,6 +428,7 @@ function schedule() {
   }
 
   if (!state.stop || state.provider !== 'bustimes') return;
+  if (!state.settings.autoRefresh) return;
 
   const base = (state.config?.refreshSeconds || 60) * 1000;
   const delay = state.failures
@@ -454,6 +485,8 @@ async function load({ force = false, provider = state.provider } = {}) {
   try {
     const params = new URLSearchParams({ stop: state.stop, provider });
     if (force) params.set('refresh', '1');
+    const customStop = (state.stops || []).find((item) => item.atco === state.stop);
+    if (customStop?.routes?.length) params.set('routes', customStop.routes.join(','));
 
     const data = await apiGet(apiUrl(`/api/departures?${params}`));
     state.data = data;
@@ -573,6 +606,13 @@ async function loadStatic() {
     }
 
     state.staticData = data;
+    state.stops = data.stops.map((stop) => ({
+      atco: stop.atco,
+      label: stop.label,
+      indicator: stop.indicator,
+      hint: stop.hint,
+      routes: stop.routes,
+    }));
     state.config = {
       stops: data.stops.map((stop) => ({
         atco: stop.atco,
@@ -619,6 +659,7 @@ async function loadStatic() {
 }
 
 async function bootStatic() {
+  state.settings = await loadSettings();
   const providers = document.querySelector('.providers');
   if (providers) providers.hidden = true;
 
@@ -642,6 +683,7 @@ async function bootStatic() {
   setInterval(tickClock, 1000);
   setInterval(tickCountdowns, 1000);
 
+  applyBoardLayout();
   await loadStatic();
 }
 
@@ -652,6 +694,8 @@ async function boot() {
     await bootStatic();
     return;
   }
+
+  state.settings = await loadSettings();
 
   try {
     state.config = await apiGet(apiUrl('/api/config'));
@@ -665,34 +709,34 @@ async function boot() {
     };
   }
 
+  const configuredStops = state.config.stops || [];
+  const customStops = state.settings.customStops.map((stop) => ({
+    atco: stop.atco,
+    label: stop.label || stop.atco,
+    indicator: stop.indicator || '',
+    hint: stop.hint || '',
+    routes: stop.routes || [],
+  }));
+  state.stops = [...configuredStops, ...customStops];
+
   state.tapiRemaining = state.config?.tapi?.remaining ?? null;
 
-  let savedProvider = null;
-  let saved = null;
-  try {
-    savedProvider = localStorage.getItem('hsb.provider');
-    saved = localStorage.getItem('hsb.stop');
-  } catch {
-    /* storage disabled */
-  }
-
   state.provider =
-    savedProvider === 'tapi' || savedProvider === 'bustimes'
-      ? savedProvider
+    state.settings.provider === 'tapi' || state.settings.provider === 'bustimes'
+      ? state.settings.provider
       : state.config.primaryProvider || 'bustimes';
   if (state.provider === 'tapi' && !state.config?.tapi?.enabled) {
     state.provider = 'bustimes';
   }
 
-  const stops = state.config.stops || [];
-  if (stops.some((s) => s.atco === saved)) {
-    state.stop = saved;
-  } else {
-    state.stop = state.config.defaultStop || stops[0]?.atco || null;
-  }
+  const stops = state.stops;
+  const remembered = stops.find((stop) => stop.atco === state.settings.stop);
+  const defaultStop = stops.find((stop) => stop.atco === state.settings.defaultStop);
+  state.stop = (remembered || defaultStop || stops[0])?.atco || null;
 
   renderSwitcher();
   renderProviderButtons();
+  applyBoardLayout();
 
   $('retry').addEventListener('click', () => {
     if (!state.stop) {
@@ -718,8 +762,15 @@ async function boot() {
     load({ provider: 'tapi', force: true });
   });
 
+  $('refresh').addEventListener('click', () => {
+    if (state.loading) return;
+    hideError();
+    load({ provider: state.provider, force: state.provider === 'bustimes' });
+  });
+
   document.addEventListener('visibilitychange', () => {
     if (document.hidden || state.provider !== 'bustimes') return;
+    if (!state.settings.autoRefresh) return;
     const staleAfter = (state.config.refreshSeconds || 60) * 1000;
     if (Date.now() - state.lastFetch > staleAfter) load();
   });

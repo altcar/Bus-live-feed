@@ -7,10 +7,14 @@ origin, so no GitHub Pages build or CORS configuration is needed.
 ## Routes
 
 - `GET /` — the board (`worker/assets/index.html`)
-- `GET /styles.css`, `GET /app.js` — static assets
+- `GET /settings` — the settings page (`worker/assets/settings.html`)
+- `GET /styles.css`, `GET /app.js`, `GET /settings.js`, `GET /settings-store.js`
+  — static assets
 - `GET /api/config`
 - `GET /api/health`
 - `GET /api/departures?stop=017000054&provider=bustimes`
+- `GET /api/departures?stop=017000054&routes=m1,m4&provider=bustimes` — optional
+  route filter; any 6–20 character ATCO code is accepted
 - `GET /api/departures?stop=017000054&provider=tapi` — cache-only, **no hit**
 - `GET /api/departures?stop=017000054&provider=tapi&refresh=1` — manual fetch,
   spends **1 TAPI hit**
@@ -49,9 +53,9 @@ npx wrangler secret put TAPI_APP_ID
 npx wrangler secret put TAPI_APP_KEY
 ```
 
-For automatic deployments, connect the repository in the Cloudflare dashboard:
-Workers & Pages → `m1-bus` → Settings → Builds → Connect → GitHub. Use build
-command `node scripts/build-worker-assets.mjs` and deploy command
+For automatic deployments, the repository is already connected in the Cloudflare
+dashboard (Workers & Pages → `m1-bus` → Settings → Builds), branch `main`. The
+build command is `node scripts/build-worker-assets.mjs` and the deploy command is
 `npx wrangler@4.160.0 deploy`. The `name` in `wrangler.toml` must stay `m1-bus`.
 
 ## Notes

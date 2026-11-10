@@ -100,6 +100,24 @@ The board and its live API are served by one **Cloudflare Worker**:
 assets binding for everything else. `scripts/build-worker-assets.mjs` copies
 `public/` into `worker/assets/` with same-origin asset links (no `api-base`).
 
+## Settings
+
+The board has a settings page at **<https://m1-bus.hheylau.workers.dev/settings>**
+(also linked from the gear icon on the board). Settings are stored in the
+browser's **IndexedDB** (`bus-live-feed` → `settings`), so they follow the
+device, not the account.
+
+- **Default bus stop** — the stop loaded when the board does not remember a
+  recent selection.
+- **Add bus stop** — add any ATCO code to the switcher, with an optional label
+  and route filter. The Worker accepts arbitrary stop codes and an optional
+  `routes` query parameter, so custom stops work for both BODS and TAPI.
+- **Auto refresh live BODS** — when off, the board loads once and does not
+  schedule the 60-second refresh; use the refresh button instead.
+- **Timetable column** — show aimed time only, expected time only, or both
+  (aimed time with an `exp HH:MM` suffix).
+- **Swap Due and Timetable columns** — exchange the two right-hand columns.
+
 Deploying the Worker (manual):
 
 ```powershell
@@ -167,6 +185,8 @@ credentials, and keep `.env` private — it is git-ignored.
 
 - `GET /api/config` — stops, routes, refresh interval, TAPI budget and cache state.
 - `GET /api/departures?stop=017000054` — live BODS board (default).
+- `GET /api/departures?stop=017000054&routes=m1,m4` — optional route filter for
+  custom stops (any 6–20 character ATCO code is accepted).
 - `GET /api/departures?stop=017000054&provider=bustimes&refresh=1` — bypass the
   short bustimes cache; still no TAPI call.
 - `GET /api/departures?stop=017000054&provider=tapi` — **cache-only**. Returns

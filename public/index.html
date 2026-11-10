@@ -10,7 +10,7 @@
       content="Live southbound bus departures from Harry Stoke: m1, m4 and T1."
     />
     <title>Harry Stoke · Live departures</title>
-    <link rel="stylesheet" href="/styles.css?v=20261022c" />
+    <link rel="stylesheet" href="/styles.css?v=20261110a" />
   </head>
   <body>
     <main class="shell">
@@ -28,21 +28,29 @@
 
       <div class="controlbar">
         <nav id="stop-switch" class="switcher" aria-label="Choose stop" hidden></nav>
-        <div class="providers" role="group" aria-label="Data source">
-          <button id="mode-live" class="provider provider--live" type="button" aria-pressed="true">
-            <span class="provider__dot" aria-hidden="true"></span>
-            <span>Live BODS</span>
+        <div class="controls">
+          <div class="providers" role="group" aria-label="Data source">
+            <button id="mode-live" class="provider provider--live" type="button" aria-pressed="true">
+              <span class="provider__dot" aria-hidden="true"></span>
+              <span>Live BODS</span>
+            </button>
+            <button
+              id="mode-tapi"
+              class="provider"
+              type="button"
+              aria-pressed="false"
+              title="Fetch a TAPI snapshot. Uses one TAPI request; page reloads reuse the cache."
+            >
+              <span>TAPI snapshot</span>
+              <span id="tapi-left" class="provider__hits">—</span>
+            </button>
+          </div>
+          <button id="refresh" class="icon-btn" type="button" title="Refresh now" aria-label="Refresh now">
+            ↻
           </button>
-          <button
-            id="mode-tapi"
-            class="provider"
-            type="button"
-            aria-pressed="false"
-            title="Fetch a TAPI snapshot. Uses one TAPI request; page reloads reuse the cache."
-          >
-            <span>TAPI snapshot</span>
-            <span id="tapi-left" class="provider__hits">—</span>
-          </button>
+          <a id="settings" class="icon-btn" href="./settings" title="Settings" aria-label="Settings">
+            ⚙
+          </a>
         </div>
       </div>
 
@@ -88,6 +96,6 @@
       </noscript>
     </main>
 
-    <script src="/app.js?v=20261022c" type="module"></script>
+    <script src="/app.js?v=20261110a" type="module"></script>
   </body>
 </html>

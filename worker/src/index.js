@@ -115,9 +115,9 @@ function firstTime(value) {
   return m ? `${m[1].padStart(2, '0')}:${m[2]}` : null;
 }
 
-function parseBustimes(html, atco, now = Date.now()) {
-  const meta = STOPS[atco];
-  if (!meta) throw Object.assign(new Error('Unknown stop'), { status: 400 });
+function parseBustimes(html, atco, now = Date.now(), routesOverride = null) {
+  const meta = STOPS[atco] || {};
+  const routes = normalizeRoutes(routesOverride) || meta.routes || ROUTES;
 
   const today = londonDate(new Date(now));
   const seen = new Set();
@@ -130,7 +130,7 @@ function parseBustimes(html, atco, now = Date.now()) {
 
     const line = stripTags(cells[0]);
     if (!line) continue;
-    if (!meta.routes.some((r) => r.toLowerCase() === line.toLowerCase())) continue;
+    if (!routes.some((r) => r.toLowerCase() === line.toLowerCase())) continue;
 
     const destHtml = cells[1].replace(/<div class="vehicle">[\s\S]*?<\/div>/gi, '');
     const destination = stripTags(destHtml);
@@ -159,7 +159,7 @@ function parseBustimes(html, atco, now = Date.now()) {
     seen.add(key);
 
     const displayLine =
-      meta.routes.find((r) => r.toLowerCase() === line.toLowerCase()) || line;
+      routes.find((r) => r.toLowerCase() === line.toLowerCase()) || line;
 
     departures.push({
       line: displayLine,
@@ -186,15 +186,15 @@ function parseBustimes(html, atco, now = Date.now()) {
   return {
     stop: {
       atco,
-      name: meta.label,
-      label: meta.label,
-      indicator: meta.indicator,
-      hint: meta.hint,
-      locality: meta.label,
+      name: meta.label || atco,
+      label: meta.label || atco,
+      indicator: meta.indicator || '',
+      hint: meta.hint || '',
+      locality: meta.label || '',
       bearing: '',
       smscode: '',
-      lat: meta.lat,
-      lon: meta.lon,
+      lat: meta.lat ?? null,
+      lon: meta.lon ?? null,
     },
     departures: departures.slice(0, 40),
     fetchedAt: new Date(now).toISOString(),
@@ -232,6 +232,18 @@ function cleanDestination(value) {
 
 function isTrue(value) {
   return value === true || value === 'true' || value === 1;
+}
+
+function normalizeRoutes(value) {
+  const list = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split(',')
+      : [];
+  const routes = list
+    .map((route) => String(route).trim())
+    .filter((route) => /^[A-Za-z0-9]{1,10}$/.test(route));
+  return routes.length ? [...new Set(routes)] : null;
 }
 
 function tapiSettings(env) {
@@ -292,8 +304,9 @@ async function consumeTapiHit(env) {
   return { ok: true, count, remaining: settings.dailyLimit - count };
 }
 
-function normalizeTapiBoard(json, atco, now = Date.now()) {
-  const meta = STOPS[atco];
+function normalizeTapiBoard(json, atco, now = Date.now(), routesOverride = null) {
+  const meta = STOPS[atco] || {};
+  const routes = normalizeRoutes(routesOverride) || meta.routes || ROUTES;
   const raw = Object.values(json.departures || {}).flat();
   const seen = new Set();
   const departures = [];
@@ -303,7 +316,7 @@ function normalizeTapiBoard(json, atco, now = Date.now()) {
 
     const line = String(d.line || d.line_name || '').trim();
     if (!line) continue;
-    if (!meta.routes.some((r) => r.toLowerCase() === line.toLowerCase())) continue;
+    if (!routes.some((r) => r.toLowerCase() === line.toLowerCase())) continue;
 
     const aimedDate = d.aimed?.departure?.date || d.date;
     const aimedTime = d.aimed_departure_time || d.aimed?.departure?.time;
@@ -337,7 +350,7 @@ function normalizeTapiBoard(json, atco, now = Date.now()) {
       Boolean(expectedTime) && /sirivm|siri\s*vm|nextbuses|realtime/i.test(source);
 
     departures.push({
-      line: meta.routes.find((r) => r.toLowerCase() === line.toLowerCase()) || line,
+      line: routes.find((r) => r.toLowerCase() === line.toLowerCase()) || line,
       destination: cleanDestination(d.direction) || 'Unknown destination',
       aimedDate,
       aimedTime,
@@ -363,15 +376,15 @@ function normalizeTapiBoard(json, atco, now = Date.now()) {
   return {
     stop: {
       atco,
-      name: meta.label,
-      label: meta.label,
-      indicator: meta.indicator,
-      hint: meta.hint,
-      locality: meta.label,
+      name: meta.label || atco,
+      label: meta.label || atco,
+      indicator: meta.indicator || '',
+      hint: meta.hint || '',
+      locality: meta.label || '',
       bearing: '',
       smscode: '',
-      lat: meta.lat,
-      lon: meta.lon,
+      lat: meta.lat ?? null,
+      lon: meta.lon ?? null,
     },
     departures: departures.slice(0, 40),
     fetchedAt: new Date(now).toISOString(),
@@ -379,7 +392,7 @@ function normalizeTapiBoard(json, atco, now = Date.now()) {
   };
 }
 
-async function fetchTapiBoard(env, atco) {
+async function fetchTapiBoard(env, atco, routesOverride = null) {
   const url = new URL(
     `https://transportapi.com/v3/uk/bus/stop_timetables/${encodeURIComponent(atco)}.json`
   );
@@ -398,7 +411,7 @@ async function fetchTapiBoard(env, atco) {
     throw err;
   }
 
-  return normalizeTapiBoard(await res.json(), atco);
+  return normalizeTapiBoard(await res.json(), atco, Date.now(), routesOverride);
 }
 
 function mapTapiError(err) {
@@ -447,6 +460,7 @@ async function tapiMeta(env, atco, extra = {}) {
 
 async function handleTapi(url, env, atco, cors) {
   const settings = tapiSettings(env);
+  const routes = normalizeRoutes(url.searchParams.get('routes'));
   if (!settings.enabled) {
     return json(
       {
@@ -543,7 +557,7 @@ async function handleTapi(url, env, atco, cors) {
   }
 
   try {
-    const data = await fetchTapiBoard(env, atco);
+    const data = await fetchTapiBoard(env, atco, routes);
     await setTapiCache(env, atco, data);
     return json(
       {
@@ -672,10 +686,11 @@ export default {
     }
 
     if (url.pathname === '/api/departures') {
-      const atco = url.searchParams.get('stop') || '017000054';
-      if (!STOPS[atco]) {
-        return json({ error: 'unknown_stop', stops: Object.keys(STOPS) }, 400, cors);
+      const atco = String(url.searchParams.get('stop') || '017000054').trim();
+      if (!/^[0-9A-Za-z]{6,20}$/.test(atco)) {
+        return json({ error: 'invalid_stop' }, 400, cors);
       }
+      const routes = normalizeRoutes(url.searchParams.get('routes'));
 
       const provider = String(url.searchParams.get('provider') || 'bustimes').toLowerCase();
       if (provider === 'tapi') {
@@ -698,7 +713,7 @@ export default {
 
       try {
         const html = await fetchBustimes(atco);
-        const board = parseBustimes(html, atco);
+        const board = parseBustimes(html, atco, Date.now(), routes);
         return json(
           {
             ...board,

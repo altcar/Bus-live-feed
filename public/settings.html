@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en-GB">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#080c11" />
+    <meta name="description" content="Settings for the Harry Stoke live bus board." />
+    <title>Settings · Harry Stoke live departures</title>
+    <link rel="stylesheet" href="./styles.css?v=20261110a" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="top">
+        <div class="stop">
+          <p class="kicker"><span class="kicker__dot" aria-hidden="true"></span>Settings</p>
+          <h1>Board settings</h1>
+          <p class="stop-meta">Saved in this browser with IndexedDB.</p>
+        </div>
+        <a class="btn--link" href="./">Back to board</a>
+      </header>
+
+      <section class="panel">
+        <h2>Default bus stop</h2>
+        <p class="panel__text">Used when the board does not remember a recent stop.</p>
+        <select id="default-stop" aria-label="Default bus stop"></select>
+        <p class="panel__text panel__text--muted" id="remember-note"></p>
+      </section>
+
+      <section class="panel">
+        <h2>Bus stops</h2>
+        <p class="panel__text">
+          Add any ATCO stop code to the switcher. Routes are optional; leave blank to show
+          every route the stop serves.
+        </p>
+        <form id="add-stop">
+          <input id="stop-atco" type="text" placeholder="ATCO code" aria-label="ATCO code" required />
+          <input id="stop-label" type="text" placeholder="Label (optional)" aria-label="Label" />
+          <input
+            id="stop-routes"
+            type="text"
+            placeholder="Routes (optional, e.g. m1,m4,T1)"
+            aria-label="Routes"
+          />
+          <button class="btn" type="submit">Add stop</button>
+        </form>
+        <ul id="custom-stops" class="custom-stops"></ul>
+      </section>
+
+      <section class="panel">
+        <h2>Live board</h2>
+        <label class="check">
+          <input type="checkbox" id="auto-refresh" />
+          <span>Auto refresh live BODS</span>
+        </label>
+        <label class="check">
+          <input type="checkbox" id="swap-columns" />
+          <span>Swap Due and Timetable columns</span>
+        </label>
+        <label class="check">
+          <span>Timetable column shows</span>
+          <select id="sched-mode">
+            <option value="both">Aimed + expected</option>
+            <option value="aimed">Aimed time only</option>
+            <option value="expected">Expected time only</option>
+          </select>
+        </label>
+      </section>
+
+      <p id="save-state" class="save-state" role="status"></p>
+    </main>
+    <script type="module" src="./settings.js?v=20261110a"></script>
+  </body>
+</html>

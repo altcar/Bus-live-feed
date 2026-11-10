@@ -3,15 +3,20 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const publicDir = path.join(root, 'public');
 const outDir = path.join(root, 'worker', 'assets');
 
 fs.rmSync(outDir, { recursive: true, force: true });
 fs.mkdirSync(outDir, { recursive: true });
 
-fs.copyFileSync(path.join(root, 'public', 'styles.css'), path.join(outDir, 'styles.css'));
-fs.copyFileSync(path.join(root, 'public', 'app.js'), path.join(outDir, 'app.js'));
+// Copy every static file except index.html, which is generated below.
+for (const entry of fs.readdirSync(publicDir, { withFileTypes: true })) {
+  if (entry.isFile() && entry.name !== 'index.html') {
+    fs.copyFileSync(path.join(publicDir, entry.name), path.join(outDir, entry.name));
+  }
+}
 
-let html = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
+let html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf8');
 
 // Serve the same-origin API: no api-base meta, relative asset URLs.
 const css = /href="(\/styles\.css\?v=[^"]*)"/.exec(html);
