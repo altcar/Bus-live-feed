@@ -11,6 +11,7 @@ node_modules/
 
 # Local previews, build output, caches and temp files
 dist/
+worker/assets/
 _preview-*.png
 *.tmp
 .cache/

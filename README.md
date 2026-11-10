@@ -66,7 +66,7 @@ the endpoint was removed from the request path entirely.
 Requires Node.js 22 or newer (tested on Node 24).
 
 ```powershell
-cd "C:\Users\V9\OneDrive - UWE Bristol\Apps\harrystoke"
+cd "C:\Users\c85-lau\OneDrive - UWE Bristol\Apps\harrystoke"
 npm install
 npm start
 ```
@@ -79,45 +79,58 @@ For development with auto-restart:
 npm run dev
 ```
 
-## View online (GitHub Pages)
+## View online (Cloudflare Worker)
 
-**<https://altcar.github.io/Bus-live-feed/>**
+**<https://m1-bus.hheylau.workers.dev/>**
 
-The page fetches live data in the browser from a **Cloudflare Worker**:
+The board and its live API are served by one **Cloudflare Worker**:
 
-- Worker: `https://bus-live-feed.hheylau.workers.dev`
+- Worker: `https://m1-bus.hheylau.workers.dev` (name `m1-bus`)
+- Static page + `/api/*` on the same origin, so no CORS or Pages build is needed
 - Source: free bustimes.org / BODS (the Worker fetches the
   `/stops/{ATCO}/departures` fragment)
 - Browser refresh: every **60 seconds**
-- TAPI: also online, via the Worker's KV cache. Pressing the TAPI button spends
+- TAPI: manual-only, via the Worker's KV cache. Pressing the TAPI button spends
   1 of 28 daily hits; page reloads reuse the cached snapshot and spend nothing.
-- No scheduled Pages rebuilds. The static `data.json` snapshot is only used when
-  `WORKER_URL` is unset.
+- `https://altcar.github.io/Bus-live-feed/` still works but now redirects to the
+  Worker. The old API-only Worker `bus-live-feed.hheylau.workers.dev` is kept as
+  a backup.
 
-`worker/src/index.js` is a CORS-enabled API that mirrors the local server's
-`/api` shape. `scripts/build-static.mjs` injects
-`<meta name="api-base" content="https://bus-live-feed.hheylau.workers.dev">` from
-the repository variable `WORKER_URL`. The Pages workflow runs on code pushes or
-manually, not on a timer.
+`worker/src/index.js` serves the `/api` shape and falls through to the static
+assets binding for everything else. `scripts/build-worker-assets.mjs` copies
+`public/` into `worker/assets/` with same-origin asset links (no `api-base`).
 
-Deploying the Worker:
+Deploying the Worker (manual):
 
 ```powershell
-cd worker
-npx wrangler login
-npx wrangler kv namespace create BOARD_KV   # put the id in wrangler.toml
-npx wrangler secret put TAPI_APP_ID
+npm run build:worker
+npx wrangler deploy --config worker/wrangler.toml
+npx wrangler secret put TAPI_APP_ID   # optional, enables the TAPI button
 npx wrangler secret put TAPI_APP_KEY
-npx wrangler deploy
-gh variable set WORKER_URL --repo altcar/Bus-live-feed --body "https://bus-live-feed.<subdomain>.workers.dev"
 ```
 
-Then re-run **Publish static board**. The Worker and the local board share the
-same TAPI key and therefore the same upstream 30/day cap; each has its own local
-guard, so don't max both. If the Worker is unreachable, the page shows its error
-state.
+Auto-deploy (Cloudflare dashboard Git connection):
+
+1. Workers & Pages → `m1-bus` → Settings → Builds → Connect → GitHub →
+   `altcar/Bus-live-feed`, branch `main`.
+2. Build command: `node scripts/build-worker-assets.mjs`
+3. Deploy command: `npx wrangler@4.160.0 deploy`
+4. Root directory: repository root (or `worker`, with build command
+   `node ../scripts/build-worker-assets.mjs`).
+
+The Worker name in `wrangler.toml` must stay `m1-bus`. The Worker and the local
+board share the same TAPI key and therefore the same upstream 30/day cap; each
+has its own local guard, so don't max both. If the Worker is unreachable, the
+page shows its error state.
 
 Local preview:
+
+```powershell
+npm run build:worker
+npx wrangler dev --config worker/wrangler.toml   # http://127.0.0.1:8787
+```
+
+The offline static snapshot is still available:
 
 ```powershell
 npm run build:static

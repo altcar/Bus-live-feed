@@ -650,7 +650,7 @@ export default {
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: cors });
     }
-    if (request.method !== 'GET') {
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
       return json({ error: 'method_not_allowed' }, 405, cors);
     }
 
@@ -724,13 +724,22 @@ export default {
       }
     }
 
-    if (url.pathname === '/') {
-      return new Response('Bus live feed worker. Try /api/config', {
-        status: 200,
-        headers: { ...cors, 'Content-Type': 'text/plain; charset=utf-8' },
-      });
+    if (url.pathname === '/api' || url.pathname === '/api/') {
+      return json({ error: 'not_found' }, 404, cors);
     }
 
-    return json({ error: 'not_found' }, 404, cors);
+    // Everything else is the static board, served by the same Worker.
+    if (!env.ASSETS) {
+      return json({ error: 'assets_not_configured' }, 503, cors);
+    }
+
+    const assetResponse = await env.ASSETS.fetch(request);
+    const contentType = assetResponse.headers.get('Content-Type') || '';
+    if (contentType.includes('text/html')) {
+      const response = new Response(assetResponse.body, assetResponse);
+      response.headers.set('Cache-Control', 'no-cache');
+      return response;
+    }
+    return assetResponse;
   },
 };

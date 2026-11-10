@@ -12,6 +12,8 @@
     "dev": "node --watch --env-file-if-exists=.env server.js",
     "test": "node --env-file-if-exists=.env --test",
     "build:static": "node --env-file-if-exists=.env scripts/build-static.mjs",
+    "build:worker": "node scripts/build-worker-assets.mjs",
+    "build:pages": "node scripts/build-pages-redirect.mjs",
     "preview:static": "node scripts/serve-static.mjs"
   },
   "dependencies": {
